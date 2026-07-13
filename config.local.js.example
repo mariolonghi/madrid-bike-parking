@@ -1,0 +1,5 @@
+// Copy this file to config.local.js (which is gitignored) and paste your
+// Google Maps JavaScript API key to enable the Google base map locally.
+// Alternatively, load the app with ?gmapsKey=YOUR_KEY once — it is saved to
+// localStorage for subsequent visits.
+window.GMAPS_KEY = 'YOUR_GOOGLE_MAPS_API_KEY';

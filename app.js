@@ -17,10 +17,23 @@ const CONFIG = {
   MADRID_ZOOM: 11,
   LIST_CAP: 500, // max rows rendered in the accessible list at once
 
-  // Paste a Google Maps JavaScript API key here to enable the Google base map.
-  // Without it, switching to Google Maps shows a notice and stays on OpenStreetMap.
-  GOOGLE_MAPS_API_KEY: '',
 };
+
+// Google Maps needs a JS API key. It is injected at runtime (never committed),
+// resolved in this order:
+//   1. URL param   ?gmapsKey=...   (also saved to localStorage for next time)
+//   2. localStorage  gmapsKey
+//   3. window.GMAPS_KEY  (set by an untracked config.local.js — see the example file)
+// With no key, switching to Google Maps shows a notice and stays on OpenStreetMap.
+function getGoogleKey() {
+  try {
+    const fromUrl = new URLSearchParams(location.search).get('gmapsKey');
+    if (fromUrl) { localStorage.setItem('gmapsKey', fromUrl); return fromUrl; }
+    const fromStore = localStorage.getItem('gmapsKey');
+    if (fromStore) return fromStore;
+  } catch (_) { /* localStorage may be unavailable */ }
+  return (typeof window !== 'undefined' && window.GMAPS_KEY) || '';
+}
 
 /* ---------- Coordinate conversion: ETRS89 UTM zone 30N -> WGS84 lat/lon ----------
  * The dataset stores position as UTM easting/northing (COORD_GIS_X / _Y); the
@@ -175,23 +188,27 @@ function createLeafletEngine() {
 let googleLoader;
 function loadGoogle() {
   if (googleLoader) return googleLoader;
-  const key = CONFIG.GOOGLE_MAPS_API_KEY;
+  const key = getGoogleKey();
   if (!key) {
     return Promise.reject(new Error(
-      'Google Maps necesita una clave API. Añádela en CONFIG.GOOGLE_MAPS_API_KEY (app.js).'));
+      'Google Maps necesita una clave API. Añádela con ?gmapsKey=… en la URL, o en config.local.js.'));
   }
   googleLoader = new Promise((resolve, reject) => {
     window.gm_authFailure = () => reject(new Error('Clave de Google Maps inválida o sin facturación activada.'));
-    const load = (src) => new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = src; s.async = true; s.onload = res;
-      s.onerror = () => rej(new Error('No se pudo cargar Google Maps.'));
-      document.head.appendChild(s);
-    });
-    load(`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&loading=async`)
-      .then(() => load('https://unpkg.com/@googlemaps/markerclusterer@2.5.3/dist/index.min.js'))
-      .then(resolve)
-      .catch(reject);
+    // The callback fires only once google.maps and its classes are fully ready.
+    window.__gmapsReady = () => {
+      const c = document.createElement('script');
+      c.src = 'https://unpkg.com/@googlemaps/markerclusterer@2.5.3/dist/index.min.js';
+      c.async = true;
+      c.onload = () => resolve();
+      c.onerror = () => reject(new Error('No se pudo cargar el agrupador de marcadores.'));
+      document.head.appendChild(c);
+    };
+    const s = document.createElement('script');
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&callback=__gmapsReady&loading=async`;
+    s.async = true;
+    s.onerror = () => reject(new Error('No se pudo cargar Google Maps.'));
+    document.head.appendChild(s);
   });
   return googleLoader;
 }
@@ -202,7 +219,7 @@ function createGoogleEngine() {
   return {
     name: 'google',
     async init() {
-      await loadGoogle();
+      await loadGoogle(); // resolves via the callback, so google.maps.* is ready
       map = new google.maps.Map(document.getElementById('map'), {
         center: { lat: CONFIG.MADRID_CENTER[0], lng: CONFIG.MADRID_CENTER[1] },
         zoom: CONFIG.MADRID_ZOOM,
