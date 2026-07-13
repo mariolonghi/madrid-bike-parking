@@ -6,7 +6,7 @@ be served from any static host.
 
 **Live demo:** <https://madrid-bike-parking.mariolonghi.workers.dev/>
 
-![Map of Madrid's bike-parking racks with clustering, filters and a synced results list](docs/preview.png)
+![Map of Madrid's bike-parking racks with the BiciMAD station overlay active — stations colour-coded by bikes available over the rack clusters, with the base-map, layer and filter controls in the sidebar](docs/preview.png)
 
 ## Features
 
