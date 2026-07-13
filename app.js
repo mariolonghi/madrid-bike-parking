@@ -155,13 +155,43 @@ function popupHtml(p) {
     <span class="p-id">ID ${p.id} · ${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}</span></div>`;
 }
 
+/* ---------- BiciMAD stations ---------- */
+
+// Marker colour: distinct blue when availability is off; graded by bikes free when on.
+function stationColor(s) {
+  if (!s.hasStatus) return '#1d6fe0';       // availability off → neutral blue
+  if (!s.inService) return '#9aa4b0';        // out of service → grey
+  if (s.bikes <= 0) return '#c0392b';        // empty → red
+  if (s.bikes <= 2) return '#e0a400';        // low → amber
+  return '#0a7d34';                          // ok → green
+}
+
+function stationPopupHtml(s) {
+  const row = (label, val) => (val !== '' && val != null) ? `<dt>${label}</dt><dd>${val}</dd>` : '';
+  let live = '';
+  if (s.hasStatus) {
+    const when = s.lastReported ? new Date(s.lastReported * 1000).toLocaleTimeString('es-ES') : '';
+    live = row('Bicis libres', s.bikes) + row('Anclajes libres', s.docks) +
+           (s.bikesDisabled ? row('Bicis no disponibles', s.bikesDisabled) : '') +
+           row('Estado', s.inService ? 'En servicio' : (s.status || 'Fuera de servicio')) +
+           row('Actualizado', when);
+  }
+  return `<div class="map-popup"><span class="p-title">🚲 ${s.name}</span>
+    <dl>
+      ${row('Dirección', s.address)}
+      ${row('Capacidad', s.capacity)}
+      ${live}
+    </dl>
+    <span class="p-id">BiciMAD · estación ${s.id}</span></div>`;
+}
+
 /* ---------- Map engines ----------
  * Both engines share the #map container and expose the same interface:
  *   init() -> Promise, render(points), focus(point), resize(), destroy()
  */
 
 function createLeafletEngine() {
-  let map, cluster;
+  let map, cluster, stationLayer;
   const markerById = new Map();
   return {
     name: 'osm',
@@ -190,8 +220,22 @@ function createLeafletEngine() {
       const m = markerById.get(p.id);
       if (m) cluster.zoomToShowLayer(m, () => m.openPopup());
     },
+    // BiciMAD stations: a separate layer (not merged into the rack cluster).
+    renderStations(stations) {
+      if (!stationLayer) stationLayer = L.layerGroup().addTo(map);
+      stationLayer.clearLayers();
+      for (const s of stations) {
+        L.circleMarker([s.lat, s.lon], {
+          radius: 7, weight: 2, color: '#fff', fillColor: stationColor(s), fillOpacity: 1,
+          alt: `Estación BiciMAD ${s.name}`,
+        }).bindPopup(() => stationPopupHtml(s)).addTo(stationLayer);
+      }
+    },
+    clearStations() {
+      if (stationLayer) { stationLayer.clearLayers(); map.removeLayer(stationLayer); stationLayer = null; }
+    },
     resize() { if (map) map.invalidateSize(false); },
-    destroy() { if (map) { map.remove(); map = null; } markerById.clear(); },
+    destroy() { if (map) { map.remove(); map = null; } markerById.clear(); stationLayer = null; },
   };
 }
 
@@ -229,6 +273,7 @@ function loadGoogle() {
 function createGoogleEngine() {
   let map, clusterer, info;
   let markers = [];
+  let stationMarkers = [];
   return {
     name: 'google',
     async init() {
@@ -260,10 +305,32 @@ function createGoogleEngine() {
       const m = markers.find(mm => mm._pid === p.id);
       if (m) { info.setContent(popupHtml(p)); info.open(map, m); }
     },
+    // BiciMAD stations: plain markers added straight to the map (not clustered).
+    renderStations(stations) {
+      stationMarkers.forEach(m => m.setMap(null));
+      stationMarkers = stations.map(s => {
+        const m = new google.maps.Marker({
+          position: { lat: s.lat, lng: s.lon },
+          map,
+          title: `BiciMAD: ${s.name}`,
+          zIndex: 1000,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 7, fillColor: stationColor(s), fillOpacity: 1,
+            strokeColor: '#fff', strokeWeight: 2,
+          },
+        });
+        m.addListener('click', () => { info.setContent(stationPopupHtml(s)); info.open(map, m); });
+        return m;
+      });
+    },
+    clearStations() { stationMarkers.forEach(m => m.setMap(null)); stationMarkers = []; },
     resize() { if (map) google.maps.event.trigger(map, 'resize'); },
     destroy() {
       if (clusterer) clusterer.clearMarkers();
+      stationMarkers.forEach(m => m.setMap(null));
       markers = [];
+      stationMarkers = [];
       map = null;
       document.getElementById('map').innerHTML = '';
     },
@@ -276,6 +343,8 @@ let engine = null;       // active map engine
 let allPoints = [];      // every plotted point
 let filtered = [];       // currently visible subset
 let discardedRecords = []; // records that couldn't be placed (for the info popup)
+let stations = [];       // BiciMAD stations (station_information, merged with status when loaded)
+let biciMadActive = false; // is the BiciMAD overlay on?
 
 function setStatus(msg, isError = false) {
   const el = document.getElementById('status');
@@ -353,6 +422,7 @@ async function setEngine(name) {
     await next.init();
     engine = next;
     engine.render(filtered);
+    if (biciMadActive) engine.renderStations(stations); // carry the overlay across engines
     setTimeout(() => engine.resize(), 200);
     setStatus(`${filtered.length.toLocaleString('es-ES')} aparcabicicletas mostradas.`);
     try { localStorage.setItem('mapEngine', name); } catch (_) {}
@@ -497,6 +567,109 @@ function onClearKey() {
   }
 }
 
+/* ---------- BiciMAD overlay (GBFS) ---------- */
+
+const GBFS_DISCOVERY = 'https://madrid.publicbikesystem.net/customer/gbfs/v2/gbfs.json';
+let gbfsUrls = null; // { info, status } — read from discovery, never hard-coded
+
+async function gbfsDiscover() {
+  if (gbfsUrls) return gbfsUrls;
+  const j = await (await fetch(GBFS_DISCOVERY)).json();
+  const langs = j.data || {};
+  const set = langs.es || langs.en || Object.values(langs)[0] || { feeds: [] };
+  const url = n => (set.feeds.find(f => f.name === n) || {}).url;
+  gbfsUrls = { info: url('station_information'), status: url('station_status') };
+  if (!gbfsUrls.info) throw new Error('el feed GBFS no expone station_information');
+  return gbfsUrls;
+}
+
+async function fetchStationInfo() {
+  const { info } = await gbfsDiscover();
+  const j = await (await fetch(info)).json();
+  return (j.data.stations || []).map(st => ({
+    id: st.station_id, lat: st.lat, lon: st.lon,
+    name: st.name, address: st.address || '', capacity: st.capacity,
+    hasStatus: false,
+  }));
+}
+
+async function fetchStationStatus() {
+  const { status } = await gbfsDiscover();
+  if (!status) throw new Error('el feed GBFS no expone station_status');
+  const j = await (await fetch(status)).json();
+  const byId = new Map();
+  for (const s of (j.data.stations || [])) byId.set(s.station_id, s);
+  return { byId, lastUpdated: j.last_updated };
+}
+
+function setBiciMsg(msg, isError = false) {
+  const el = document.getElementById('bicimad-msg');
+  el.textContent = msg || '';
+  el.classList.toggle('error', isError);
+}
+
+function renderStationsOnEngine() {
+  if (engine && biciMadActive) engine.renderStations(stations);
+}
+
+async function enableBiciMad() {
+  setBiciMsg('Cargando estaciones BiciMAD…');
+  try {
+    stations = await fetchStationInfo();
+    biciMadActive = true;
+    renderStationsOnEngine();
+    document.getElementById('bicimad-status').disabled = false;
+    setBiciMsg(`${stations.length.toLocaleString('es-ES')} estaciones BiciMAD.`);
+  } catch (err) {
+    console.error(err);
+    biciMadActive = false;
+    document.getElementById('bicimad-toggle').checked = false;
+    setBiciMsg(`No se pudieron cargar las estaciones: ${err.message}`, true);
+  }
+}
+
+function disableBiciMad() {
+  biciMadActive = false;
+  stations = [];
+  if (engine) engine.clearStations();
+  const statusChk = document.getElementById('bicimad-status');
+  statusChk.checked = false;
+  statusChk.disabled = true;
+  document.getElementById('bicimad-live').hidden = true;
+  setBiciMsg('');
+}
+
+async function loadAvailability() {
+  if (!biciMadActive) return;
+  setBiciMsg('Cargando disponibilidad…');
+  try {
+    const { byId, lastUpdated } = await fetchStationStatus();
+    for (const s of stations) {
+      const st = byId.get(s.id);
+      s.hasStatus = !!st;
+      s.bikes = st ? st.num_bikes_available : null;
+      s.docks = st ? st.num_docks_available : null;
+      s.bikesDisabled = st ? st.num_bikes_disabled : null;
+      s.inService = st ? (st.status === 'IN_SERVICE' && st.is_renting !== false) : false;
+      s.status = st ? st.status : null;
+      s.lastReported = st ? st.last_reported : null;
+    }
+    renderStationsOnEngine();
+    const when = lastUpdated ? new Date(lastUpdated * 1000).toLocaleTimeString('es-ES') : '';
+    document.getElementById('bicimad-updated').textContent = when ? `Actualizado ${when}` : '';
+    setBiciMsg('');
+  } catch (err) {
+    console.error(err);
+    setBiciMsg(`No se pudo cargar la disponibilidad: ${err.message}`, true);
+  }
+}
+
+function clearAvailability() {
+  for (const s of stations) s.hasStatus = false;
+  renderStationsOnEngine();
+  document.getElementById('bicimad-updated').textContent = '';
+}
+
 /* ---------- List panel collapse ---------- */
 
 function setListVisible(visible) {
@@ -522,6 +695,16 @@ async function init() {
   document.getElementById('gmaps-key-save').addEventListener('click', onSaveKey);
   document.getElementById('gmaps-key-input').addEventListener('keydown', e => { if (e.key === 'Enter') onSaveKey(); });
   document.getElementById('gmaps-key-clear').addEventListener('click', onClearKey);
+
+  document.getElementById('bicimad-toggle').addEventListener('change', e => {
+    if (e.target.checked) enableBiciMad(); else disableBiciMad();
+  });
+  document.getElementById('bicimad-status').addEventListener('change', e => {
+    document.getElementById('bicimad-live').hidden = !e.target.checked;
+    if (e.target.checked) loadAvailability(); else clearAvailability();
+  });
+  document.getElementById('bicimad-refresh').addEventListener('click', loadAvailability);
+
   document.getElementById('district').addEventListener('change', applyFilters);
 
   let searchTimer;

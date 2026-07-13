@@ -15,10 +15,28 @@ be served from any static host.
   - **Repository file** — a snapshot committed to `data/`, refreshed manually.
   - **Live API** — queried directly from `datos.madrid.es` in the browser.
 - Filter by **district** and free-text **search** (address / neighbourhood).
+- **Switchable base map** — OpenStreetMap or Google Maps (the latter with your own key, entered
+  in-app; never shipped in the repo).
+- **BiciMAD station overlay** (optional, off by default) — live bike-share stations from the
+  operator's **GBFS** feed, drawn as a distinct layer over the parking racks. An optional
+  *live availability* mode colour-codes each station by bikes free and shows bikes/docks counts
+  in the popup (fetch-once with a manual refresh). See below.
 - Accessible companion **list** synced to the current filter, keyboard support, skip link,
   light/dark themes, responsive layout.
 - Coordinates converted on the fly from **ETRS89 UTM zone 30N → WGS84** (the source data has
   no populated lat/lon), so both data sources render identically.
+
+## BiciMAD overlay
+
+Toggle **"Mostrar estaciones BiciMAD"** to overlay Madrid's live bike-share stations on top of
+the parking racks. Data comes from the operator's public **GBFS** feed
+(`madrid.publicbikesystem.net/customer/gbfs/v2/…`) — no API key, CORS-open, read entirely in the
+browser. Stations are their own layer with a distinct marker, not merged into the rack clusters.
+
+Enable **"Disponibilidad en vivo"** to also load `station_status`: markers are colour-coded by
+bikes available (green 3+, amber 1–2, red 0, grey out-of-service) and the popup shows live
+bikes/docks. It fetches once with an **Actualizar** button to refresh — no background polling.
+Data: EMT Madrid / Ayuntamiento de Madrid (feed served by PBSC).
 
 ## Architecture
 

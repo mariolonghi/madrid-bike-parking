@@ -59,6 +59,30 @@
         </div>
       </fieldset>
 
+      <fieldset class="control-group">
+        <legend>BiciMAD (estaciones)</legend>
+        <label class="check">
+          <input type="checkbox" id="bicimad-toggle" />
+          Mostrar estaciones BiciMAD
+        </label>
+        <label class="check sub">
+          <input type="checkbox" id="bicimad-status" disabled />
+          Disponibilidad en vivo <span class="hint">(bicis/anclajes libres)</span>
+        </label>
+
+        <div id="bicimad-live" hidden>
+          <button type="button" id="bicimad-refresh">Actualizar</button>
+          <span id="bicimad-updated" class="hint"></span>
+          <div id="bicimad-legend" class="bm-legend">
+            <span><i style="background:#0a7d34"></i> 3+ bicis</span>
+            <span><i style="background:#e0a400"></i> 1–2</span>
+            <span><i style="background:#c0392b"></i> 0</span>
+            <span><i style="background:#9aa4b0"></i> fuera de servicio</span>
+          </div>
+        </div>
+        <p id="bicimad-msg" class="hint" role="status" aria-live="polite"></p>
+      </fieldset>
+
       <div class="control-group">
         <label for="district">Distrito</label>
         <select id="district">
@@ -110,6 +134,7 @@
   <footer class="app-footer">
     <p>
       Fuente: <a href="https://datos.madrid.es/dataset/205099-0-aparca-bicis" rel="noopener">Portal de Datos Abiertos del Ayuntamiento de Madrid</a>
+      · Estaciones BiciMAD: EMT Madrid / Ayuntamiento de Madrid (GBFS)
       · Mapa base © <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a>
       · <a href="https://github.com/" rel="noopener" id="repo-link">Código en GitHub</a>
     </p>

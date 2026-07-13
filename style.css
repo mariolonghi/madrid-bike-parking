@@ -199,6 +199,30 @@ select, input[type="search"] {
 }
 .discard-list .d-id { color: var(--muted); display: block; font-size: .78rem; }
 
+/* BiciMAD layer controls */
+.check { display: block; font-weight: 400; margin: 6px 0; cursor: pointer; font-size: .9rem; }
+.check input { margin-right: 6px; }
+.check.sub { margin-left: 20px; }
+.check input:disabled + * , .check:has(input:disabled) { color: var(--muted); cursor: default; }
+#bicimad-live { margin: 8px 0 0; }
+#bicimad-refresh {
+  cursor: pointer;
+  font-size: .82rem;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+#bicimad-refresh:hover { border-color: var(--focus); }
+#bicimad-refresh:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#bicimad-updated { margin-left: 8px; }
+.bm-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: .78rem; color: var(--muted); }
+.bm-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.bm-legend i { width: 11px; height: 11px; border-radius: 50%; border: 1px solid #fff; box-shadow: 0 0 0 1px var(--border); }
+#bicimad-msg:empty { display: none; }
+#bicimad-msg.error { color: #c0392b; }
+
 /* Google Maps key box */
 .key-box {
   margin-top: 10px;
