@@ -44,6 +44,19 @@
           <input type="radio" name="engine" value="google" />
           Google Maps <span class="hint">(requiere clave API)</span>
         </label>
+
+        <div id="gmaps-key-box" class="key-box" hidden>
+          <label for="gmaps-key-input">Clave de API de Google Maps</label>
+          <input type="text" id="gmaps-key-input" placeholder="AIza… (pega tu clave)"
+                 autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+          <div class="key-actions">
+            <button type="button" id="gmaps-key-save">Usar clave</button>
+            <button type="button" id="gmaps-key-clear" class="link-btn" hidden>Borrar</button>
+          </div>
+          <p class="hint">Se guarda solo en este navegador (localStorage). No se envía a ningún
+             servidor ni se incluye en el repositorio.
+             <a href="https://developers.google.com/maps/documentation/javascript/get-api-key" rel="noopener">¿Cómo obtener una clave? ↗</a></p>
+        </div>
       </fieldset>
 
       <div class="control-group">
@@ -97,8 +110,8 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
-  <!-- Optional untracked local key (window.GMAPS_KEY). Absent by default; a 404 here is harmless. -->
-  <script src="config.local.js"></script>
+  <!-- Optional key injection point (window.GMAPS_KEY). Empty by default; visitors can paste a key in-app. -->
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

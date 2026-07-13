@@ -160,6 +160,40 @@ select, input[type="search"] {
 .map-popup dd { margin: 0; }
 .map-popup .p-id { color: var(--muted); font-size: .78rem; margin-top: 6px; display: block; }
 
+/* Google Maps key box */
+.key-box {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.key-box[hidden] { display: none; }
+.key-box label { display: block; font-size: .82rem; font-weight: 600; margin-bottom: 4px; }
+.key-box input { margin-bottom: 8px; }
+.key-actions { display: flex; align-items: center; gap: 10px; }
+.key-actions button {
+  cursor: pointer;
+  font-size: .85rem;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.key-actions button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.key-actions .link-btn {
+  background: none;
+  border: none;
+  color: var(--focus);
+  padding: 4px;
+  font-weight: 400;
+  text-decoration: underline;
+}
+.key-actions .link-btn[hidden] { display: none; }
+.key-box .hint { margin: 8px 0 0; }
+
 /* List panel header + collapse controls */
 .list-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .icon-btn {

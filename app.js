@@ -23,7 +23,7 @@ const CONFIG = {
 // resolved in this order:
 //   1. URL param   ?gmapsKey=...   (also saved to localStorage for next time)
 //   2. localStorage  gmapsKey
-//   3. window.GMAPS_KEY  (set by an untracked config.local.js — see the example file)
+//   3. window.GMAPS_KEY  (optionally set in config.js for a self-hosted build)
 // With no key, switching to Google Maps shows a notice and stays on OpenStreetMap.
 function getGoogleKey() {
   try {
@@ -34,6 +34,9 @@ function getGoogleKey() {
   } catch (_) { /* localStorage may be unavailable */ }
   return (typeof window !== 'undefined' && window.GMAPS_KEY) || '';
 }
+
+function saveGoogleKey(k) { try { localStorage.setItem('gmapsKey', k); } catch (_) {} }
+function clearGoogleKey() { try { localStorage.removeItem('gmapsKey'); } catch (_) {} }
 
 /* ---------- Coordinate conversion: ETRS89 UTM zone 30N -> WGS84 lat/lon ----------
  * The dataset stores position as UTM easting/northing (COORD_GIS_X / _Y); the
@@ -191,7 +194,7 @@ function loadGoogle() {
   const key = getGoogleKey();
   if (!key) {
     return Promise.reject(new Error(
-      'Google Maps necesita una clave API. Añádela con ?gmapsKey=… en la URL, o en config.local.js.'));
+      'Google Maps necesita una clave API. Pégala en el recuadro de abajo para usarla.'));
   }
   googleLoader = new Promise((resolve, reject) => {
     window.gm_authFailure = () => reject(new Error('Clave de Google Maps inválida o sin facturación activada.'));
@@ -210,6 +213,8 @@ function loadGoogle() {
     s.onerror = () => reject(new Error('No se pudo cargar Google Maps.'));
     document.head.appendChild(s);
   });
+  // Allow a retry (e.g. with a corrected key) after a failed load.
+  googleLoader.catch(() => { googleLoader = null; });
   return googleLoader;
 }
 
@@ -341,6 +346,7 @@ async function setEngine(name) {
     engine.render(filtered);
     setTimeout(() => engine.resize(), 200);
     setStatus(`${filtered.length.toLocaleString('es-ES')} aparcabicicletas mostradas.`);
+    try { localStorage.setItem('mapEngine', name); } catch (_) {}
   } catch (err) {
     console.error(err);
     setStatus(err.message, true);
@@ -350,6 +356,7 @@ async function setEngine(name) {
     engine.render(filtered);
     const osm = document.querySelector('input[name="engine"][value="osm"]');
     if (osm) osm.checked = true;
+    if (name === 'google') showKeyBox(true); // let the user fix the key
   }
 }
 
@@ -377,6 +384,68 @@ async function loadSource(source) {
   }
 }
 
+/* ---------- Google Maps key box ---------- */
+
+function refreshKeyBox() {
+  const input = document.getElementById('gmaps-key-input');
+  const clear = document.getElementById('gmaps-key-clear');
+  const hasKey = !!getGoogleKey();
+  clear.hidden = !hasKey;
+  input.value = '';
+  input.placeholder = hasKey ? 'Clave guardada ✓ — pega otra para cambiarla' : 'AIza… (pega tu clave)';
+}
+
+function showKeyBox(show) {
+  const box = document.getElementById('gmaps-key-box');
+  box.hidden = !show;
+  if (show) refreshKeyBox();
+}
+
+// Pick a base map from the radios, prompting for a key if Google needs one.
+function chooseEngine(name) {
+  if (name === 'google') {
+    if (!getGoogleKey()) {
+      showKeyBox(true);
+      setStatus('Pega tu clave de API de Google Maps para usar este mapa base.', true);
+      const osm = document.querySelector('input[name="engine"][value="osm"]');
+      if (osm) osm.checked = true; // stay on OSM until a key is provided
+      document.getElementById('gmaps-key-input').focus();
+      return;
+    }
+    showKeyBox(true); // visible so the key can be changed/cleared
+    setEngine('google');
+  } else {
+    showKeyBox(false);
+    setEngine('osm');
+  }
+}
+
+function onSaveKey() {
+  const input = document.getElementById('gmaps-key-input');
+  const k = input.value.trim();
+  if (!k) { input.focus(); return; }
+  saveGoogleKey(k);
+  // Google Maps JS can't re-authenticate with a new key on an already-loaded
+  // page, so if it was loaded before, reload to apply the new key cleanly.
+  if (window.google && window.google.maps) { location.reload(); return; }
+  const g = document.querySelector('input[name="engine"][value="google"]');
+  if (g) g.checked = true;
+  refreshKeyBox();
+  setEngine('google');
+}
+
+function onClearKey() {
+  clearGoogleKey();
+  refreshKeyBox();
+  setStatus('Clave borrada de este navegador.');
+  if (engine && engine.name === 'google') {
+    const osm = document.querySelector('input[name="engine"][value="osm"]');
+    if (osm) osm.checked = true;
+    showKeyBox(false);
+    setEngine('osm');
+  }
+}
+
 /* ---------- List panel collapse ---------- */
 
 function setListVisible(visible) {
@@ -397,8 +466,11 @@ async function init() {
     radio.addEventListener('change', e => { if (e.target.checked) loadSource(e.target.value); });
   });
   document.querySelectorAll('input[name="engine"]').forEach(radio => {
-    radio.addEventListener('change', e => { if (e.target.checked) setEngine(e.target.value); });
+    radio.addEventListener('change', e => { if (e.target.checked) chooseEngine(e.target.value); });
   });
+  document.getElementById('gmaps-key-save').addEventListener('click', onSaveKey);
+  document.getElementById('gmaps-key-input').addEventListener('keydown', e => { if (e.key === 'Enter') onSaveKey(); });
+  document.getElementById('gmaps-key-clear').addEventListener('click', onClearKey);
   document.getElementById('district').addEventListener('change', applyFilters);
 
   let searchTimer;
@@ -412,7 +484,15 @@ async function init() {
 
   window.addEventListener('load', () => setTimeout(() => { if (engine) engine.resize(); }, 200));
 
-  await setEngine('osm'); // build the initial map
+  // Restore the last base map (only start on Google if a key is available).
+  let wantGoogle = false;
+  try { wantGoogle = localStorage.getItem('mapEngine') === 'google'; } catch (_) {}
+  const startName = (wantGoogle && getGoogleKey()) ? 'google' : 'osm';
+  const startRadio = document.querySelector(`input[name="engine"][value="${startName}"]`);
+  if (startRadio) startRadio.checked = true;
+  if (startName === 'google') showKeyBox(true);
+  await setEngine(startName); // build the initial map
+
   const checked = document.querySelector('input[name="source"]:checked');
   loadSource(checked ? checked.value : 'file');
 }
