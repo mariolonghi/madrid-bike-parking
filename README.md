@@ -78,13 +78,25 @@ python3 -m http.server 8000
 # open http://localhost:8000
 ```
 
-## Deploy (GitHub Pages)
+## Deploy
 
-1. Push this repository to GitHub (public).
-2. **Settings → Pages → Build and deployment → Source: Deploy from a branch**, branch `main`, folder `/ (root)`.
-3. Your site goes live at `https://<user>.github.io/<repo>/`.
+The site is any-host static, so it works on GitHub Pages, Cloudflare Pages, Netlify, etc.
 
-`.nojekyll` is included so Pages serves the files as-is.
+**Cloudflare Pages (this project's deployment):**
+
+1. Cloudflare dashboard → **Workers & Pages → Create → Pages → Connect to Git**.
+2. Select the `madrid-bike-parking` repository.
+3. Build settings — it's a plain static site, no build step:
+   - **Framework preset:** None
+   - **Build command:** _(leave empty)_
+   - **Build output directory:** `/`
+4. Deploy. Every push to `main` redeploys automatically. A `*.pages.dev` URL is issued,
+   and a custom domain/subdomain can be attached later.
+
+**GitHub Pages** (alternative): Settings → Pages → Deploy from branch `main`, folder `/ (root)`.
+`.nojekyll` is included so Pages serves the files as-is. Note: on an account whose user site
+(`<user>.github.io`) has a custom-domain `CNAME`, GitHub redirects all `github.io` project URLs
+to that domain — use a per-repo custom domain or Cloudflare Pages instead.
 
 ## Data & licensing
 
