@@ -110,26 +110,34 @@ function titleCase(s) {
   return (s || '').toLowerCase().replace(/\b[\p{L}]/gu, c => c.toUpperCase());
 }
 
-// Convert a raw record into a plotted point, or null if coords are unusable.
-function toPoint(r) {
-  const x = parseFloat(r.COORD_GIS_X), y = parseFloat(r.COORD_GIS_Y);
-  if (!isFinite(x) || !isFinite(y)) return null;
-  const [lat, lon] = utmToLatLon(x, y);
-  if (!(lat > 39.5 && lat < 41.5 && lon > -4.5 && lon < -3.0)) return null;
-
-  const addr = [titleCase(r.TIPO_VIA), titleCase(r.NOM_VIA), (r.NUM_VIA || '').trim()]
+function rawAddr(r) {
+  return [titleCase(r.TIPO_VIA), titleCase(r.NOM_VIA), (r.NUM_VIA || '').trim()]
     .filter(Boolean).join(' ').trim();
+}
 
+// Classify a raw record: return { point } to plot it, or { discard } with the
+// reason it can't be placed on the map.
+function classify(r) {
+  const x = parseFloat(r.COORD_GIS_X), y = parseFloat(r.COORD_GIS_Y);
+  if (!isFinite(x) || !isFinite(y)) {
+    return { discard: { reason: 'missing', id: r.ID, addr: rawAddr(r), x: r.COORD_GIS_X, y: r.COORD_GIS_Y } };
+  }
+  const [lat, lon] = utmToLatLon(x, y);
+  if (!(lat > 39.5 && lat < 41.5 && lon > -4.5 && lon < -3.0)) {
+    return { discard: { reason: 'range', id: r.ID, addr: rawAddr(r), x, y, lat, lon } };
+  }
   return {
-    id: r.ID,
-    lat, lon,
-    addr: addr || 'Aparcabicicletas',
-    barrio: titleCase(r.BARRIO),
-    distrito: titleCase(r.DISTRITO),
-    modelo: r.MODELO || '—',
-    fecha: r.FECHA_INSTALACION || '',
-    estado: r.ESTADO || '',
-    cp: r.COD_POSTAL || '',
+    point: {
+      id: r.ID,
+      lat, lon,
+      addr: rawAddr(r) || 'Aparcabicicletas',
+      barrio: titleCase(r.BARRIO),
+      distrito: titleCase(r.DISTRITO),
+      modelo: r.MODELO || '—',
+      fecha: r.FECHA_INSTALACION || '',
+      estado: r.ESTADO || '',
+      cp: r.COD_POSTAL || '',
+    },
   };
 }
 
@@ -267,6 +275,7 @@ function createGoogleEngine() {
 let engine = null;       // active map engine
 let allPoints = [];      // every plotted point
 let filtered = [];       // currently visible subset
+let discardedRecords = []; // records that couldn't be placed (for the info popup)
 
 function setStatus(msg, isError = false) {
   const el = document.getElementById('status');
@@ -367,21 +376,63 @@ async function loadSource(source) {
   try {
     const raw = await loadRaw(source);
     const records = normalizeRecords(raw);
-    const total = records.length;
-    allPoints = records.map(toPoint).filter(Boolean);
-    const dropped = total - allPoints.length;
+    allPoints = [];
+    discardedRecords = [];
+    for (const r of records) {
+      const c = classify(r);
+      if (c.point) allPoints.push(c.point);
+      else discardedRecords.push(c.discard);
+    }
 
     populateDistricts();
     applyFilters();
-
-    const label = source === 'api' ? 'API en vivo' : 'archivo del repositorio';
-    document.getElementById('source-meta').textContent =
-      `Origen: ${label}. ${allPoints.length.toLocaleString('es-ES')} puntos representados` +
-      (dropped ? ` (${dropped} descartados por coordenadas ausentes o fuera de rango).` : '.');
+    renderSourceMeta(source);
   } catch (err) {
     console.error(err);
     setStatus(`Error al cargar los datos: ${err.message}`, true);
   }
+}
+
+/* ---------- Source metadata + discarded-records popup ---------- */
+
+function renderSourceMeta(source) {
+  const meta = document.getElementById('source-meta');
+  const label = source === 'api' ? 'API en vivo' : 'archivo del repositorio';
+  meta.textContent = `Origen: ${label}. ${allPoints.length.toLocaleString('es-ES')} puntos representados`;
+  if (discardedRecords.length) {
+    meta.append(' (');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'linklike';
+    btn.textContent = `${discardedRecords.length.toLocaleString('es-ES')} descartados`;
+    btn.addEventListener('click', openDiscardedDialog);
+    meta.append(btn, ' — ver por qué).');
+  } else {
+    meta.append('.');
+  }
+}
+
+function openDiscardedDialog() {
+  const missing = discardedRecords.filter(d => d.reason === 'missing');
+  const range = discardedRecords.filter(d => d.reason === 'range');
+  const examples = [...missing, ...range].slice(0, 6);
+
+  const li = d => {
+    const why = d.reason === 'missing'
+      ? 'sin coordenadas'
+      : `fuera del área (${d.lat.toFixed(3)}, ${d.lon.toFixed(3)})`;
+    return `<li><strong>${d.addr || 'Sin dirección'}</strong> — ${why}
+      <span class="d-id">ID ${d.id}</span></li>`;
+  };
+
+  document.getElementById('discarded-body').innerHTML = `
+    <p>Estos registros del conjunto de datos no se muestran en el mapa porque su
+       posición no se puede situar: las coordenadas UTM (<code>COORD_GIS_X/Y</code>)
+       están vacías, o al convertirlas caen fuera del área de Madrid.</p>
+    <p><strong>${missing.length}</strong> sin coordenadas · <strong>${range.length}</strong> fuera de rango.</p>
+    <p>Ejemplos:</p>
+    <ul class="discard-list">${examples.map(li).join('')}</ul>`;
+  document.getElementById('discarded-dialog').showModal();
 }
 
 /* ---------- Google Maps key box ---------- */

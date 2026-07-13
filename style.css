@@ -160,6 +160,45 @@ select, input[type="search"] {
 .map-popup dd { margin: 0; }
 .map-popup .p-id { color: var(--muted); font-size: .78rem; margin-top: 6px; display: block; }
 
+/* Inline link-styled button (e.g. discarded count) */
+.linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--focus);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.linklike:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* Discarded-records dialog */
+.discard-dialog {
+  max-width: 420px;
+  width: calc(100vw - 32px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, .3);
+}
+.discard-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+.discard-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; }
+.discard-head h2 { margin: 0; font-size: 1.05rem; }
+.discard-dialog p { font-size: .88rem; margin: 10px 0; }
+.discard-dialog code { background: var(--bg); padding: 1px 4px; border-radius: 4px; font-size: .85em; }
+.discard-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.discard-list li {
+  font-size: .84rem;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  background: var(--bg);
+}
+.discard-list .d-id { color: var(--muted); display: block; font-size: .78rem; }
+
 /* Google Maps key box */
 .key-box {
   margin-top: 10px;
