@@ -20,7 +20,7 @@
     <p class="tagline">Aparcabicicletas municipales en la vía pública — datos abiertos del Ayuntamiento de Madrid.</p>
   </header>
 
-  <div class="layout">
+  <div class="layout list-collapsed">
     <aside class="controls" aria-label="Controles y filtros">
       <fieldset class="control-group">
         <legend>Origen de los datos</legend>
@@ -94,13 +94,13 @@
       <div id="map" tabindex="0" role="application"
            aria-label="Mapa de aparcabicicletas de Madrid. Use las flechas para desplazarse y +/− para acercar."></div>
       <button type="button" id="list-reopen" class="reopen-btn" aria-expanded="false"
-              aria-controls="list-panel" hidden>Resultados ◂</button>
+              aria-controls="list-panel">Resultados ◂</button>
     </main>
 
     <section class="list-panel" aria-label="Lista de aparcabicis" id="list-panel">
       <div class="list-head">
         <h2 id="list-heading">Resultados</h2>
-        <button type="button" id="list-close" class="icon-btn" aria-expanded="true"
+        <button type="button" id="list-close" class="icon-btn" aria-expanded="false"
                 aria-controls="list-panel" aria-label="Ocultar panel de resultados" title="Ocultar panel">×</button>
       </div>
       <ul id="list" class="results-list" aria-labelledby="list-heading"></ul>
