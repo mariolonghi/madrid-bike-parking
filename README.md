@@ -6,6 +6,8 @@ be served from any static host.
 
 **Live demo:** <https://madrid-bike-parking.mariolonghi.workers.dev/>
 
+![Map of Madrid's bike-parking racks with clustering, filters and a synced results list](docs/preview.png)
+
 ## Features
 
 - Interactive Leaflet map with marker **clustering** (7 000+ points stay readable).
@@ -37,9 +39,13 @@ request.
 
 ## Updating the committed data
 
-The repository ships a snapshot of the dataset at **`data/aparcabicis.json`**. The source data
-changes infrequently, so it is refreshed **manually**. The file must be in **JSON** format —
-the app parses JSON natively and uses the same code path for the file and the live API.
+The repository ships a snapshot of the dataset at **`data/aparcabicis.json`**. The file must be
+in **JSON** format — the app parses JSON natively and uses the same code path for the file and
+the live API.
+
+A scheduled GitHub Action (`.github/workflows/refresh-data.yml`) refreshes this snapshot
+automatically every Monday (and can be run on demand from the **Actions** tab), committing only
+when the data actually changed. You can also refresh it yourself:
 
 **Option A — script (recommended):**
 

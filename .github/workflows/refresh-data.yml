@@ -1,0 +1,38 @@
+name: Refresh data snapshot
+
+# Keeps data/aparcabicis.json in sync with the Madrid open-data portal.
+# Cloudflare Pages auto-deploys the site on any push to main, so a committed
+# refresh here also updates the live map.
+
+on:
+  schedule:
+    - cron: '17 5 * * 1'   # every Monday 05:17 UTC
+  workflow_dispatch: {}     # allow manual runs from the Actions tab
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download latest snapshot
+        run: ./scripts/update-data.sh
+
+      - name: Commit if changed
+        run: |
+          if git diff --quiet -- data/aparcabicis.json; then
+            echo "No changes in the dataset — nothing to commit."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/aparcabicis.json
+          git commit -m "data: refresh snapshot (automated)"
+          git push
