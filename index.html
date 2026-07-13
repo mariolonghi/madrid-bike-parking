@@ -34,6 +34,18 @@
         </label>
       </fieldset>
 
+      <fieldset class="control-group">
+        <legend>Mapa base</legend>
+        <label class="radio">
+          <input type="radio" name="engine" value="osm" checked />
+          OpenStreetMap
+        </label>
+        <label class="radio">
+          <input type="radio" name="engine" value="google" />
+          Google Maps <span class="hint">(requiere clave API)</span>
+        </label>
+      </fieldset>
+
       <div class="control-group">
         <label for="district">Distrito</label>
         <select id="district">
@@ -60,10 +72,16 @@
     <main class="map-wrap">
       <div id="map" tabindex="0" role="application"
            aria-label="Mapa de aparcabicicletas de Madrid. Use las flechas para desplazarse y +/− para acercar."></div>
+      <button type="button" id="list-reopen" class="reopen-btn" aria-expanded="false"
+              aria-controls="list-panel" hidden>Resultados ◂</button>
     </main>
 
     <section class="list-panel" aria-label="Lista de aparcabicis" id="list-panel">
-      <h2 id="list-heading">Resultados</h2>
+      <div class="list-head">
+        <h2 id="list-heading">Resultados</h2>
+        <button type="button" id="list-close" class="icon-btn" aria-expanded="true"
+                aria-controls="list-panel" aria-label="Ocultar panel de resultados" title="Ocultar panel">×</button>
+      </div>
       <ul id="list" class="results-list" aria-labelledby="list-heading"></ul>
     </section>
   </div>

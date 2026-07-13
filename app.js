@@ -1,6 +1,11 @@
 /* Aparcabicis de Madrid — static map viewer
  * Data: Ayuntamiento de Madrid open data (resource 205099-2-aparca-bicis)
  * No build step, no backend. Runs entirely in the browser.
+ *
+ * POC additions:
+ *  - Collapsible "Resultados" panel.
+ *  - Swappable base map: OpenStreetMap (Leaflet) or Google Maps.
+ *    Google Maps needs an API key — set CONFIG.GOOGLE_MAPS_API_KEY below.
  */
 'use strict';
 
@@ -11,6 +16,10 @@ const CONFIG = {
   MADRID_CENTER: [40.4248, -3.6924],
   MADRID_ZOOM: 11,
   LIST_CAP: 500, // max rows rendered in the accessible list at once
+
+  // Paste a Google Maps JavaScript API key here to enable the Google base map.
+  // Without it, switching to Google Maps shows a notice and stays on OpenStreetMap.
+  GOOGLE_MAPS_API_KEY: '',
 };
 
 /* ---------- Coordinate conversion: ETRS89 UTM zone 30N -> WGS84 lat/lon ----------
@@ -108,24 +117,9 @@ function toPoint(r) {
   };
 }
 
-/* ---------- Map ---------- */
-
-const map = L.map('map', { center: CONFIG.MADRID_CENTER, zoom: CONFIG.MADRID_ZOOM });
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-}).addTo(map);
-
-const cluster = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 50 });
-map.addLayer(cluster);
-
-let allPoints = [];      // every plotted point
-let filtered = [];       // currently visible subset
-const markerById = new Map();
-
 function popupHtml(p) {
   const row = (label, val) => val ? `<dt>${label}</dt><dd>${val}</dd>` : '';
-  return `<span class="p-title">${p.addr}</span>
+  return `<div class="map-popup"><span class="p-title">${p.addr}</span>
     <dl>
       ${row('Barrio', p.barrio)}
       ${row('Distrito', p.distrito)}
@@ -134,7 +128,128 @@ function popupHtml(p) {
       ${row('Instalado', p.fecha)}
       ${row('Estado', p.estado)}
     </dl>
-    <span class="p-id">ID ${p.id} · ${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}</span>`;
+    <span class="p-id">ID ${p.id} · ${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}</span></div>`;
+}
+
+/* ---------- Map engines ----------
+ * Both engines share the #map container and expose the same interface:
+ *   init() -> Promise, render(points), focus(point), resize(), destroy()
+ */
+
+function createLeafletEngine() {
+  let map, cluster;
+  const markerById = new Map();
+  return {
+    name: 'osm',
+    async init() {
+      map = L.map('map', { center: CONFIG.MADRID_CENTER, zoom: CONFIG.MADRID_ZOOM });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      }).addTo(map);
+      cluster = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 50 });
+      map.addLayer(cluster);
+    },
+    render(points) {
+      cluster.clearLayers();
+      markerById.clear();
+      const markers = points.map(p => {
+        const m = L.marker([p.lat, p.lon], { alt: `Aparcabici en ${p.addr}, ${p.distrito}`, keyboard: true });
+        m.bindPopup(() => popupHtml(p));
+        markerById.set(p.id, m);
+        return m;
+      });
+      cluster.addLayers(markers);
+    },
+    focus(p) {
+      map.setView([p.lat, p.lon], 18);
+      const m = markerById.get(p.id);
+      if (m) cluster.zoomToShowLayer(m, () => m.openPopup());
+    },
+    resize() { if (map) map.invalidateSize(false); },
+    destroy() { if (map) { map.remove(); map = null; } markerById.clear(); },
+  };
+}
+
+// Lazily load the Google Maps JS API + marker clusterer (once).
+let googleLoader;
+function loadGoogle() {
+  if (googleLoader) return googleLoader;
+  const key = CONFIG.GOOGLE_MAPS_API_KEY;
+  if (!key) {
+    return Promise.reject(new Error(
+      'Google Maps necesita una clave API. Añádela en CONFIG.GOOGLE_MAPS_API_KEY (app.js).'));
+  }
+  googleLoader = new Promise((resolve, reject) => {
+    window.gm_authFailure = () => reject(new Error('Clave de Google Maps inválida o sin facturación activada.'));
+    const load = (src) => new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = src; s.async = true; s.onload = res;
+      s.onerror = () => rej(new Error('No se pudo cargar Google Maps.'));
+      document.head.appendChild(s);
+    });
+    load(`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&loading=async`)
+      .then(() => load('https://unpkg.com/@googlemaps/markerclusterer@2.5.3/dist/index.min.js'))
+      .then(resolve)
+      .catch(reject);
+  });
+  return googleLoader;
+}
+
+function createGoogleEngine() {
+  let map, clusterer, info;
+  let markers = [];
+  return {
+    name: 'google',
+    async init() {
+      await loadGoogle();
+      map = new google.maps.Map(document.getElementById('map'), {
+        center: { lat: CONFIG.MADRID_CENTER[0], lng: CONFIG.MADRID_CENTER[1] },
+        zoom: CONFIG.MADRID_ZOOM,
+        mapTypeControl: false,
+        streetViewControl: false,
+      });
+      info = new google.maps.InfoWindow();
+    },
+    render(points) {
+      if (clusterer) clusterer.clearMarkers();
+      markers = points.map(p => {
+        const m = new google.maps.Marker({
+          position: { lat: p.lat, lng: p.lon },
+          title: `${p.addr}, ${p.distrito}`,
+        });
+        m._pid = p.id;
+        m.addListener('click', () => { info.setContent(popupHtml(p)); info.open(map, m); });
+        return m;
+      });
+      clusterer = new markerClusterer.MarkerClusterer({ map, markers });
+    },
+    focus(p) {
+      map.setZoom(18);
+      map.panTo({ lat: p.lat, lng: p.lon });
+      const m = markers.find(mm => mm._pid === p.id);
+      if (m) { info.setContent(popupHtml(p)); info.open(map, m); }
+    },
+    resize() { if (map) google.maps.event.trigger(map, 'resize'); },
+    destroy() {
+      if (clusterer) clusterer.clearMarkers();
+      markers = [];
+      map = null;
+      document.getElementById('map').innerHTML = '';
+    },
+  };
+}
+
+/* ---------- App state ---------- */
+
+let engine = null;       // active map engine
+let allPoints = [];      // every plotted point
+let filtered = [];       // currently visible subset
+
+function setStatus(msg, isError = false) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.classList.toggle('error', isError);
 }
 
 function applyFilters() {
@@ -150,25 +265,9 @@ function applyFilters() {
     return true;
   });
 
-  renderMarkers();
+  if (engine) engine.render(filtered);
   renderList();
-  const n = filtered.length.toLocaleString('es-ES');
-  setStatus(`${n} aparcabicicletas mostradas.`);
-}
-
-function renderMarkers() {
-  cluster.clearLayers();
-  markerById.clear();
-  const markers = filtered.map(p => {
-    const m = L.marker([p.lat, p.lon], {
-      alt: `Aparcabici en ${p.addr}, ${p.distrito}`,
-      keyboard: true,
-    });
-    m.bindPopup(() => popupHtml(p));
-    markerById.set(p.id, m);
-    return m;
-  });
-  cluster.addLayers(markers);
+  setStatus(`${filtered.length.toLocaleString('es-ES')} aparcabicicletas mostradas.`);
 }
 
 function renderList() {
@@ -190,17 +289,11 @@ function renderList() {
     btn.type = 'button';
     btn.innerHTML = `<span class="r-title">${p.addr}</span>
       <span class="r-sub">${[p.barrio, p.distrito].filter(Boolean).join(' · ')}</span>`;
-    btn.addEventListener('click', () => focusPoint(p));
+    btn.addEventListener('click', () => { if (engine) engine.focus(p); });
     li.appendChild(btn);
     frag.appendChild(li);
   }
   list.appendChild(frag);
-}
-
-function focusPoint(p) {
-  map.setView([p.lat, p.lon], 18);
-  const m = markerById.get(p.id);
-  if (m) cluster.zoomToShowLayer(m, () => m.openPopup());
 }
 
 function populateDistricts() {
@@ -216,13 +309,34 @@ function populateDistricts() {
   if (names.includes(current)) sel.value = current;
 }
 
-/* ---------- Status / wiring ---------- */
+/* ---------- Engine switching ---------- */
 
-function setStatus(msg, isError = false) {
-  const el = document.getElementById('status');
-  el.textContent = msg;
-  el.classList.toggle('error', isError);
+async function setEngine(name) {
+  if (engine && engine.name === name) return;
+  const prev = engine;
+  const next = name === 'google' ? createGoogleEngine() : createLeafletEngine();
+  setStatus(name === 'google' ? 'Cargando Google Maps…' : 'Cargando OpenStreetMap…');
+  try {
+    if (prev) prev.destroy();
+    engine = null;
+    await next.init();
+    engine = next;
+    engine.render(filtered);
+    setTimeout(() => engine.resize(), 200);
+    setStatus(`${filtered.length.toLocaleString('es-ES')} aparcabicicletas mostradas.`);
+  } catch (err) {
+    console.error(err);
+    setStatus(err.message, true);
+    // Fall back to OpenStreetMap and re-check that radio.
+    engine = createLeafletEngine();
+    await engine.init();
+    engine.render(filtered);
+    const osm = document.querySelector('input[name="engine"][value="osm"]');
+    if (osm) osm.checked = true;
+  }
 }
+
+/* ---------- Data source ---------- */
 
 async function loadSource(source) {
   setStatus(source === 'api' ? 'Consultando la API en vivo…' : 'Cargando archivo del repositorio…');
@@ -236,21 +350,37 @@ async function loadSource(source) {
     populateDistricts();
     applyFilters();
 
-    const meta = document.getElementById('source-meta');
-    meta.textContent = source === 'api'
-      ? `Origen: API en vivo. ${allPoints.length.toLocaleString('es-ES')} puntos representados` +
-        (dropped ? ` (${dropped} descartados por coordenadas ausentes o fuera de rango).` : '.')
-      : `Origen: archivo del repositorio. ${allPoints.length.toLocaleString('es-ES')} puntos representados` +
-        (dropped ? ` (${dropped} descartados por coordenadas ausentes o fuera de rango).` : '.');
+    const label = source === 'api' ? 'API en vivo' : 'archivo del repositorio';
+    document.getElementById('source-meta').textContent =
+      `Origen: ${label}. ${allPoints.length.toLocaleString('es-ES')} puntos representados` +
+      (dropped ? ` (${dropped} descartados por coordenadas ausentes o fuera de rango).` : '.');
   } catch (err) {
     console.error(err);
     setStatus(`Error al cargar los datos: ${err.message}`, true);
   }
 }
 
-function init() {
+/* ---------- List panel collapse ---------- */
+
+function setListVisible(visible) {
+  document.querySelector('.layout').classList.toggle('list-collapsed', !visible);
+  const reopen = document.getElementById('list-reopen');
+  const close = document.getElementById('list-close');
+  reopen.hidden = visible;
+  reopen.setAttribute('aria-expanded', String(visible));
+  close.setAttribute('aria-expanded', String(visible));
+  if (!visible) reopen.focus(); else close.focus();
+  if (engine) setTimeout(() => engine.resize(), 200);
+}
+
+/* ---------- Wiring ---------- */
+
+async function init() {
   document.querySelectorAll('input[name="source"]').forEach(radio => {
     radio.addEventListener('change', e => { if (e.target.checked) loadSource(e.target.value); });
+  });
+  document.querySelectorAll('input[name="engine"]').forEach(radio => {
+    radio.addEventListener('change', e => { if (e.target.checked) setEngine(e.target.value); });
   });
   document.getElementById('district').addEventListener('change', applyFilters);
 
@@ -260,8 +390,12 @@ function init() {
     searchTimer = setTimeout(applyFilters, 200);
   });
 
-  window.addEventListener('load', () => setTimeout(() => map.invalidateSize(false), 200));
+  document.getElementById('list-close').addEventListener('click', () => setListVisible(false));
+  document.getElementById('list-reopen').addEventListener('click', () => setListVisible(true));
 
+  window.addEventListener('load', () => setTimeout(() => { if (engine) engine.resize(); }, 200));
+
+  await setEngine('osm'); // build the initial map
   const checked = document.querySelector('input[name="source"]:checked');
   loadSource(checked ? checked.value : 'file');
 }
