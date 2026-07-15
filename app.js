@@ -191,7 +191,7 @@ function stationPopupHtml(s) {
  */
 
 function createLeafletEngine() {
-  let map, cluster, stationLayer;
+  let map, cluster, stationLayer, userLayer;
   const markerById = new Map();
   return {
     name: 'osm',
@@ -234,8 +234,18 @@ function createLeafletEngine() {
     clearStations() {
       if (stationLayer) { stationLayer.clearLayers(); map.removeLayer(stationLayer); stationLayer = null; }
     },
+    // "You are here" — a distinct blue dot plus an accuracy ring.
+    centerOn(lat, lon, zoom) { map.setView([lat, lon], zoom); },
+    showUser(lat, lon, acc) {
+      if (!userLayer) userLayer = L.layerGroup().addTo(map);
+      userLayer.clearLayers();
+      if (acc) L.circle([lat, lon], { radius: acc, color: '#1a73e8', weight: 1, fillColor: '#1a73e8', fillOpacity: 0.12 }).addTo(userLayer);
+      L.circleMarker([lat, lon], { radius: 8, color: '#fff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1, alt: 'Tu ubicación' })
+        .bindPopup('Estás aquí').addTo(userLayer);
+    },
+    clearUser() { if (userLayer) { userLayer.clearLayers(); map.removeLayer(userLayer); userLayer = null; } },
     resize() { if (map) map.invalidateSize(false); },
-    destroy() { if (map) { map.remove(); map = null; } markerById.clear(); stationLayer = null; },
+    destroy() { if (map) { map.remove(); map = null; } markerById.clear(); stationLayer = null; userLayer = null; },
   };
 }
 
@@ -274,6 +284,7 @@ function createGoogleEngine() {
   let map, clusterer, info;
   let markers = [];
   let stationMarkers = [];
+  let userMarker, userCircle;
   return {
     name: 'google',
     async init() {
@@ -325,12 +336,33 @@ function createGoogleEngine() {
       });
     },
     clearStations() { stationMarkers.forEach(m => m.setMap(null)); stationMarkers = []; },
+    centerOn(lat, lon, zoom) { map.setCenter({ lat, lng: lon }); map.setZoom(zoom); },
+    showUser(lat, lon, acc) {
+      if (userMarker) userMarker.setMap(null);
+      if (userCircle) userCircle.setMap(null);
+      if (acc) userCircle = new google.maps.Circle({
+        map, center: { lat, lng: lon }, radius: acc,
+        strokeColor: '#1a73e8', strokeWeight: 1, fillColor: '#1a73e8', fillOpacity: 0.12,
+      });
+      userMarker = new google.maps.Marker({
+        map, position: { lat, lng: lon }, title: 'Tu ubicación', zIndex: 2000,
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#1a73e8', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 3 },
+      });
+    },
+    clearUser() {
+      if (userMarker) userMarker.setMap(null);
+      if (userCircle) userCircle.setMap(null);
+      userMarker = null; userCircle = null;
+    },
     resize() { if (map) google.maps.event.trigger(map, 'resize'); },
     destroy() {
       if (clusterer) clusterer.clearMarkers();
       stationMarkers.forEach(m => m.setMap(null));
+      if (userMarker) userMarker.setMap(null);
+      if (userCircle) userCircle.setMap(null);
       markers = [];
       stationMarkers = [];
+      userMarker = null; userCircle = null;
       map = null;
       document.getElementById('map').innerHTML = '';
     },
@@ -345,6 +377,7 @@ let filtered = [];       // currently visible subset
 let discardedRecords = []; // records that couldn't be placed (for the info popup)
 let stations = [];       // BiciMAD stations (station_information, merged with status when loaded)
 let biciMadActive = false; // is the BiciMAD overlay on?
+let userLocation = null;  // { lat, lon, acc } once the user has located themselves
 
 function setStatus(msg, isError = false) {
   const el = document.getElementById('status');
@@ -423,6 +456,7 @@ async function setEngine(name) {
     engine = next;
     engine.render(filtered);
     if (biciMadActive) engine.renderStations(stations); // carry the overlay across engines
+    if (userLocation) engine.showUser(userLocation.lat, userLocation.lon, userLocation.acc);
     setTimeout(() => engine.resize(), 200);
     setStatus(`${filtered.length.toLocaleString('es-ES')} aparcabicicletas mostradas.`);
     try { localStorage.setItem('mapEngine', name); } catch (_) {}
@@ -670,6 +704,39 @@ function clearAvailability() {
   document.getElementById('bicimad-updated').textContent = '';
 }
 
+/* ---------- Geolocation ("locate me") ---------- */
+
+function locateUser() {
+  if (!navigator.geolocation) {
+    setStatus('La geolocalización no está disponible en este navegador.', true);
+    return;
+  }
+  const btn = document.getElementById('locate-btn');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  setStatus('Localizando…');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const { latitude, longitude, accuracy } = pos.coords;
+      userLocation = { lat: latitude, lon: longitude, acc: accuracy };
+      if (engine) {
+        engine.showUser(latitude, longitude, accuracy);
+        engine.centerOn(latitude, longitude, 16);
+      }
+      setStatus(`Ubicación encontrada (±${Math.round(accuracy)} m).`);
+      btn.disabled = false;
+      btn.classList.remove('loading');
+    },
+    (err) => {
+      const msgs = { 1: 'Permiso de ubicación denegado.', 2: 'Ubicación no disponible.', 3: 'Se agotó el tiempo de espera al localizar.' };
+      setStatus(msgs[err.code] || 'No se pudo obtener la ubicación.', true);
+      btn.disabled = false;
+      btn.classList.remove('loading');
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+  );
+}
+
 /* ---------- List panel collapse ---------- */
 
 function setListVisible(visible) {
@@ -715,6 +782,7 @@ async function init() {
 
   document.getElementById('list-close').addEventListener('click', () => setListVisible(false));
   document.getElementById('list-reopen').addEventListener('click', () => setListVisible(true));
+  document.getElementById('locate-btn').addEventListener('click', locateUser);
 
   window.addEventListener('load', () => setTimeout(() => { if (engine) engine.resize(); }, 200));
 
