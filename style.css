@@ -297,19 +297,29 @@ select, input[type="search"] {
 }
 .layout.list-collapsed .list-panel { display: none; }
 
-/* Responsive: stack on narrow screens */
+/* Responsive: stack and let the PAGE scroll on narrow screens.
+   (Desktop keeps the fixed-height 3-column grid above.) Using block flow here
+   avoids squeezing the controls into a tiny internal-scroll box. */
 @media (max-width: 900px) {
-  .layout {
-    grid-template-columns: 1fr;
-    grid-template-areas: "controls" "map" "list";
+  .layout { display: block; }
+
+  /* Controls take their natural height — every option is visible. */
+  .controls {
+    overflow: visible;
+    border: none;
+    border-bottom: 1px solid var(--border);
   }
-  .layout.list-collapsed {
-    grid-template-columns: 1fr;
-    grid-template-areas: "controls" "map";
+
+  /* Map gets a usable fixed slice of the viewport. */
+  .map-wrap { height: 65vh; }
+
+  /* Results flow below the map; long lists scroll within the panel, not the page. */
+  .list-panel {
+    border: none;
+    border-top: 1px solid var(--border);
+    max-height: 75vh;
+    overflow-y: auto;
   }
-  .map-wrap { height: 60vh; }
-  .controls, .list-panel { border: none; border-bottom: 1px solid var(--border); }
-  .list-panel { max-height: 40vh; }
 }
 
 @media (prefers-reduced-motion: reduce) {
