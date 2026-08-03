@@ -13,7 +13,7 @@ be served from any static host.
 - Interactive Leaflet map with marker **clustering** (7 000+ points stay readable).
 - **Two data sources, toggleable at runtime:**
   - **Repository file** — a snapshot committed to `data/`, refreshed manually.
-  - **Live API** — queried directly from `datos.madrid.es` in the browser.
+  - **Live** — the current dataset file fetched directly from `datos.madrid.es` in the browser.
 - Filter by **district** and free-text **search** (address / neighbourhood).
 - **Switchable base map** — OpenStreetMap or Google Maps (the latter with your own key, entered
   in-app; never shipped in the repo).
@@ -47,13 +47,13 @@ data snapshot. Leaflet is loaded from a CDN. Everything runs client-side.
 index.html            markup + CDN links
 app.js                data loading, UTM→WGS84 conversion, map, filters
 style.css             styling (light/dark, responsive, a11y)
-data/aparcabicis.json committed snapshot (Madrid datastore dump, JSON)
+data/aparcabicis.json committed snapshot (Madrid dataset JSON, an array of records)
 scripts/update-data.sh reproducible data refresh
 ```
 
-No server is required because the Madrid API sends `Access-Control-Allow-Origin: *`, so the
-browser can fetch it cross-origin, and the whole dataset (~7 400 rows) comes back in a single
-request.
+No server is required because `datos.madrid.es` sends `Access-Control-Allow-Origin: *`, so the
+browser can fetch the dataset file cross-origin, and the whole dataset (~7 400 rows) comes back in
+a single request.
 
 ## Updating the committed data
 
@@ -74,14 +74,14 @@ git commit -m "data: refresh snapshot"
 git push                                     # Cloudflare Pages redeploys automatically
 ```
 
-The script downloads the latest dump, checks it is valid JSON with a sane row count, and only
+The script downloads the latest file, checks it is valid JSON with a sane row count, and only
 then overwrites `data/aparcabicis.json`.
 
 **Option B — by hand:**
 
 1. Open the dataset page: <https://datos.madrid.es/dataset/205099-0-aparca-bicis>
-2. Under the *aparca-bicis* resource, choose the **export/download in `JSON`** format
-   (not CSV or XML — the app expects JSON).
+2. Under the *aparca-bicis* resource, choose the **`JSON`** download (not CSV or XML — the app
+   expects JSON).
 3. Save the downloaded file over **`data/aparcabicis.json`** in your local clone, keeping that
    exact path and filename.
 4. Commit and push:
@@ -91,9 +91,13 @@ then overwrites `data/aparcabicis.json`.
    git push
    ```
 
-> Note: the file download and the live API return slightly different JSON *shapes* — the file
-> dump uses `{fields, records: [[…]]}` (row arrays) while the API uses `{result: {records: [{…}]}}`
-> (objects). `normalizeRecords()` in `app.js` accepts both, so either works.
+> Note on formats: `normalizeRecords()` in `app.js` accepts a plain **array of objects**
+> (the current Madrid file) as well as the legacy CKAN shapes (`{fields, records:[[…]]}` dump and
+> `{result:{records:[{…}]}}` search API), so old and new snapshots both work.
+>
+> **2026-08-03:** Madrid re-published this dataset and dropped its CKAN DataStore, so the previous
+> `…/datastore/dump/205099-2-…?format=json` and `datastore_search` endpoints now 404. The app and
+> the refresh script were repointed to the stable resource-download URL for `205099-3-aparca-bicis`.
 
 ## Run locally / use it yourself
 

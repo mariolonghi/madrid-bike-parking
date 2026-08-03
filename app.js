@@ -10,8 +10,10 @@
 'use strict';
 
 const CONFIG = {
-  RESOURCE_ID: '205099-2-aparca-bicis',
-  API_URL: 'https://datos.madrid.es/api/3/action/datastore_search',
+  // Madrid re-published this dataset on 2026-08-03 without a CKAN DataStore, so the
+  // old datastore_search API / datastore dump are gone (404). "Live" now fetches the
+  // current JSON file Madrid refreshes; the committed snapshot is our periodic copy.
+  LIVE_URL: 'https://datos.madrid.es/dataset/205099-0-aparca-bicis/resource/205099-3-aparca-bicis/download',
   LOCAL_FILE: 'data/aparcabicis.json',
   MADRID_CENTER: [40.4248, -3.6924],
   MADRID_ZOOM: 11,
@@ -81,13 +83,16 @@ function utmToLatLon(x, y) {
 
 /* ---------- Data loading ---------- */
 
-// Normalize either the API response (records as objects) or the Madrid
-// datastore dump file ({fields:[{id}], records:[[...]]}) into objects.
+// Normalize the various shapes Madrid has served into a flat array of objects:
+//   - current file/live: a top-level array [ {…}, … ]
+//   - legacy CKAN dump:   { fields:[{id}], records:[[…]] } (rows as arrays)
+//   - legacy search API:  { result: { records:[{…}] } }
 function normalizeRecords(json) {
-  const result = json.result || json; // API wraps in .result; dump does not
+  if (Array.isArray(json)) return json;          // current Madrid file: array of objects
+  const result = json.result || json;            // legacy API wraps in .result
   const records = result.records || [];
   if (records.length === 0) return [];
-  if (Array.isArray(records[0])) {
+  if (Array.isArray(records[0])) {               // legacy dump: rows as arrays + fields[]
     const keys = (result.fields || []).map(fld => fld.id);
     return records.map(row => Object.fromEntries(keys.map((k, i) => [k, row[i]])));
   }
@@ -95,14 +100,13 @@ function normalizeRecords(json) {
 }
 
 async function loadRaw(source) {
-  if (source === 'api') {
-    const url = `${CONFIG.API_URL}?resource_id=${encodeURIComponent(CONFIG.RESOURCE_ID)}&limit=100000`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`API respondió ${res.status}`);
-    return await res.json();
+  const url = source === 'api' ? CONFIG.LIVE_URL : CONFIG.LOCAL_FILE;
+  const res = await fetch(url, { cache: 'no-cache' });
+  if (!res.ok) {
+    throw new Error(source === 'api'
+      ? `datos.madrid.es respondió ${res.status}`
+      : `No se pudo leer el archivo (${res.status})`);
   }
-  const res = await fetch(CONFIG.LOCAL_FILE, { cache: 'no-cache' });
-  if (!res.ok) throw new Error(`No se pudo leer el archivo (${res.status})`);
   return await res.json();
 }
 
@@ -476,7 +480,7 @@ async function setEngine(name) {
 /* ---------- Data source ---------- */
 
 async function loadSource(source) {
-  setStatus(source === 'api' ? 'Consultando la API en vivo…' : 'Cargando archivo del repositorio…');
+  setStatus(source === 'api' ? 'Cargando datos en vivo de datos.madrid.es…' : 'Cargando archivo del repositorio…');
   try {
     const raw = await loadRaw(source);
     const records = normalizeRecords(raw);
@@ -501,7 +505,7 @@ async function loadSource(source) {
 
 function renderSourceMeta(source) {
   const meta = document.getElementById('source-meta');
-  const label = source === 'api' ? 'API en vivo' : 'archivo del repositorio';
+  const label = source === 'api' ? 'datos en vivo (datos.madrid.es)' : 'archivo del repositorio';
   meta.textContent = `Origen: ${label}. ${allPoints.length.toLocaleString('es-ES')} puntos representados`;
   if (discardedRecords.length) {
     meta.append(' (');
