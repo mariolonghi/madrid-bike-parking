@@ -128,5 +128,5 @@ the Ayuntamiento de Madrid and OpenStreetMap.
 - Data: [Portal de Datos Abiertos del Ayuntamiento de Madrid](https://datos.madrid.es/dataset/205099-0-aparca-bicis)
   (resource `205099-2-aparca-bicis`). Only on-street municipal racks are included — not those
   inside sports centres, cultural venues, or historic/forest parks.
-- Basemap: © OpenStreetMap contributors.
+- Basemap: © OpenStreetMap contributors. :-D
 - Code: MIT (see `LICENSE`).
